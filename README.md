@@ -4,9 +4,13 @@ A Chrome extension that shows the transcript of the YouTube video you're watchin
 timestamps, using only YouTube's own captions. No backend, no API keys, nothing that costs money.
 Personal use; not published to the Chrome Web Store.
 
-> Status: **v0.1, minimal version.** Detects the video, loads the default caption track, and renders
-> it with timestamps that seek the video. Coming next: "Show transcript" panel fallback, track
-> switching, copy/download, caching.
+> Status: **v0.2.** Detects the video, lists caption tracks (manual and auto-generated) with a
+> language-aware default, renders the transcript with timestamps that seek the video, copies or
+> downloads it as TXT with or without timestamps, and caches transcripts locally.
+>
+> **Unverified:** the "Show transcript" panel fallback (used only when the caption fetch is blocked)
+> has not yet been checked against YouTube's live panel. To help verify it, run
+> [`scripts/capture-transcript-panel.js`](scripts/capture-transcript-panel.js) in the console on a video page.
 
 ## Build and load
 
@@ -51,6 +55,6 @@ folder to fix.
 ## Permissions
 
 - `https://www.youtube.com/*`: run on YouTube and fetch captions from it.
-- `storage`: transcript cache (coming in the next step).
+- `storage`: transcript cache (8 MB cap, least-recently-opened evicted first, 30-day expiry) and your timestamp setting.
 
 No other network access: every request goes to `www.youtube.com`.

@@ -1,6 +1,6 @@
 {
   "name": "yt-transcriber",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Chrome extension that shows the transcript of the YouTube video you are watching, from YouTube's own captions.",
   "type": "module",

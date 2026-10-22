@@ -50,14 +50,46 @@ export interface TranscriptResult {
   timings: Record<string, number>;
 }
 
-/** Fetches and parses one caption track. Never returns a partial transcript: any doubt throws. */
-export async function getTranscript(video: VideoInfo, track: CaptionTrack): Promise<TranscriptResult> {
+async function fromCaptions(video: VideoInfo, track: CaptionTrack): Promise<TranscriptResult> {
   const { body, timings } = await call({ kind: 'fetchTrack', videoId: video.videoId, baseUrl: track.baseUrl });
   const t = performance.now();
   const segments = parseJson3(body);
   timings.parseMs = Math.round(performance.now() - t);
   if (segments.length === 0) throw new TranscriptError('NO_CAPTIONS', `track "${track.label}" is empty`);
   return { transcript: { videoId: video.videoId, trackId: track.id, segments, source: 'captions' }, timings };
+}
+
+async function fromPanel(video: VideoInfo): Promise<TranscriptResult> {
+  const t = performance.now();
+  const { segments, languageLabel, via } = await call({ kind: 'panelTranscript', videoId: video.videoId });
+  if (segments.length === 0) throw new TranscriptError('NO_CAPTIONS', 'the transcript panel was empty');
+  return {
+    transcript: { videoId: video.videoId, trackId: 'panel', segments, source: 'panel', panelLanguage: languageLabel },
+    timings: { panelMs: Math.round(performance.now() - t), [`panelVia_${via}`]: 1 },
+  };
+}
+
+/** Failures the "Show transcript" panel can work around (it uses its own request path). */
+const PANEL_CAN_HELP = new Set(['BLOCKED', 'PAGE_CHANGED', 'MALFORMED']);
+
+/**
+ * Fetches and parses one caption track; if YouTube blocks that, reads the transcript panel instead.
+ * Never returns a partial transcript: any doubt throws.
+ */
+export async function getTranscript(video: VideoInfo, track: CaptionTrack): Promise<TranscriptResult> {
+  try {
+    return await fromCaptions(video, track);
+  } catch (e) {
+    if (!(e instanceof TranscriptError) || !PANEL_CAN_HELP.has(e.code)) throw e;
+    console.info('[yt-transcriber] caption fetch failed, trying transcript panel:', e.code, e.detail ?? '');
+    try {
+      return await fromPanel(video);
+    } catch (e2) {
+      const why = e2 instanceof TranscriptError ? (e2.detail ?? e2.code) : String(e2);
+      // Report the original failure; it is the more informative one.
+      throw new TranscriptError(e.code, `${e.detail ?? e.code}; transcript panel fallback also failed: ${why}`);
+    }
+  }
 }
 
 export function seekTo(seconds: number): Promise<null> {

@@ -28,5 +28,8 @@ export interface Transcript {
   videoId: string;
   trackId: string;
   segments: Segment[];
+  /** 'panel' = read from YouTube's "Show transcript" panel because the caption track could not be fetched. */
   source: 'captions' | 'panel';
+  /** For panel transcripts: the language the panel showed, if known (it may differ from the chosen track). */
+  panelLanguage?: string | null;
 }

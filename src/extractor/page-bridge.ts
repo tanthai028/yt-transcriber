@@ -7,6 +7,7 @@
 // the track the user picked. Requests are observed, never modified.
 
 import { TranscriptError } from './errors.ts';
+import { isTranscriptRequest, readTranscriptPanel, recordTranscriptResponse } from './panel-fallback.ts';
 import { buildTemplateUrl, buildTrackUrl, type PlayerResponse } from './parsers.ts';
 import { CHANNEL, isEnvelope, type BridgeReply, type BridgeRequest, type Envelope } from './protocol.ts';
 
@@ -41,16 +42,36 @@ function observe(url: unknown): void {
   }
 }
 
+const currentVideoId = () => player()?.getVideoData?.()?.video_id;
+
 const origOpen = XMLHttpRequest.prototype.open;
 XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, ...args: unknown[]) {
-  observe(args[1]);
+  const url = String(args[1]);
+  observe(url);
+  if (isTranscriptRequest(url)) {
+    const videoId = currentVideoId();
+    this.addEventListener('load', () => {
+      try {
+        recordTranscriptResponse(videoId, this.responseType === 'json' ? this.response : JSON.parse(this.responseText));
+      } catch {
+        // Not JSON: the fallback will read the DOM instead.
+      }
+    });
+  }
   return (origOpen as (...a: unknown[]) => void).apply(this, args);
 } as typeof XMLHttpRequest.prototype.open;
 
 const origFetch = window.fetch;
 window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
-  observe(input instanceof Request ? input.url : input);
-  return origFetch.call(this, input, init);
+  const url = input instanceof Request ? input.url : String(input);
+  observe(url);
+  const res = origFetch.call(this, input, init);
+  if (isTranscriptRequest(url)) {
+    const videoId = currentVideoId();
+    // Read a clone so the page's own consumer gets the untouched response.
+    res.then((r) => r.clone().json()).then((json) => recordTranscriptResponse(videoId, json), () => {});
+  }
+  return res;
 };
 
 // ---------------------------------------------------------------------------
@@ -191,6 +212,10 @@ async function handle(req: BridgeRequest): Promise<BridgeReply> {
       }
       case 'fetchTrack':
         return { ok: true, data: await fetchTrack(req.videoId, req.baseUrl) };
+      case 'panelTranscript': {
+        if (currentVideoId() !== req.videoId) throw new TranscriptError('PAGE_CHANGED', 'player is on a different video');
+        return { ok: true, data: await readTranscriptPanel(req.videoId) };
+      }
       case 'seek': {
         const p = player();
         if (!p?.seekTo) throw new TranscriptError('PAGE_CHANGED', 'player seek API not found');
