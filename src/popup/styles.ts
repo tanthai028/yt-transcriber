@@ -1,29 +1,23 @@
-// Lives inside the panel's shadow root, so none of this leaks into YouTube (or vice versa).
-// Look: a dropdown sheet hanging from the toolbar, with an arrow pointing up at the extension icon.
+// Styles for the popup page. Chrome draws the popup frame under the toolbar icon; this fills it.
 export const css = `
-:host { all: initial; }
-.panel {
+:root {
   --bg: #ffffff; --fg: #1f1f1f; --muted: #5f6368; --line: #dadce0; --hover: #f1f3f4; --field: #ffffff;
   --accent: #1a7486; --accent-fg: #ffffff; --link: #1a7486;
   --err-bg: #fce8e6; --err-fg: #a50e0e; --note-bg: #fef7e0;
-  position: fixed; top: 12px; right: 12px; z-index: 2300;
-  width: 380px; max-width: calc(100vw - 24px); height: calc(100vh - 24px);
-  display: flex; flex-direction: column;
-  background: var(--bg); color: var(--fg);
-  border: 1px solid var(--line); border-radius: 10px;
-  box-shadow: 0 10px 32px rgba(0,0,0,.28);
-  font: 13px/1.45 "Google Sans", Roboto, Arial, sans-serif;
 }
-.dark > .panel {
+:root.dark {
   --bg: #202124; --fg: #e8eaed; --muted: #9aa0a6; --line: #3c4043; --hover: #2d2f31; --field: #2a2b2e;
   --accent: #2f7f91; --accent-fg: #ffffff; --link: #5fb6c8;
   --err-bg: #3c1f1c; --err-fg: #f6aea9; --note-bg: #3a3322;
+  color-scheme: dark;
 }
-/* The arrow: a rotated square sharing the sheet's background and border. */
-.panel::before {
-  content: ""; position: absolute; top: -8px; right: 22px; width: 14px; height: 14px;
-  background: var(--bg); border-left: 1px solid var(--line); border-top: 1px solid var(--line);
-  transform: rotate(45deg);
+html, body { margin: 0; background: var(--bg); }
+.panel {
+  /* Height is the most Chrome allows (popups are capped at 800x600). */
+  width: 342px; height: 600px;
+  display: flex; flex-direction: column;
+  background: var(--bg); color: var(--fg);
+  font: 13px/1.45 "Google Sans", Roboto, Arial, sans-serif;
 }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 button:focus-visible, select:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
@@ -66,6 +60,19 @@ h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .1px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .note { margin: 10px 12px 0; padding: 8px 12px; border-radius: 8px; background: var(--note-bg); font-size: 12px; }
 
+.search { display: flex; align-items: center; gap: 4px; padding: 8px 10px 8px 16px; border-bottom: 1px solid var(--line); }
+.search input {
+  flex: 1; min-width: 0; height: 28px; padding: 0 8px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--field); color: var(--fg); font: inherit;
+}
+.search input:focus { outline: 2px solid var(--link); outline-offset: -1px; }
+.count { min-width: 64px; text-align: right; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.icon.small { width: 26px; height: 26px; font-size: 14px; border-radius: 6px; }
+.icon:disabled { opacity: .4; cursor: default; background: none; }
+mark { background: #fde293; color: #202124; border-radius: 2px; padding: 0 1px; }
+html.dark mark { background: #8a6d1a; color: #fff; }
+.row.current { background: var(--hover); box-shadow: inset 3px 0 0 var(--link); }
+.row.current mark { background: #f9ab00; color: #202124; }
 .list { list-style: none; margin: 0; padding: 6px 0; overflow-y: auto; flex: 1; min-height: 0; overscroll-behavior: contain; }
 .row {
   display: flex; gap: 10px; padding: 3px 14px 3px 6px; align-items: baseline;
@@ -76,5 +83,5 @@ h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .1px; }
 .ts { flex: none; min-width: 50px; padding: 2px 6px; border-radius: 4px; color: var(--link); font-variant-numeric: tabular-nums; text-align: right; }
 .ts:hover { background: var(--line); }
 .text { flex: 1; user-select: text; }
-.foot { padding: 8px 16px; border-top: 1px solid var(--line); border-radius: 0 0 10px 10px; color: var(--muted); font-size: 12px; }
+.foot { padding: 8px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 `;

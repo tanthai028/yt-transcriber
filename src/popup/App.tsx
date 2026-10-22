@@ -1,18 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { TranscriptCache, type KeyValueStore } from '../cache.ts';
-import {
-  TranscriptError,
-  getTranscript,
-  getVideoInfo,
-  messageFor,
-  pickDefaultTrack,
-  seekTo,
-  type ErrorCode,
-  type Transcript,
-  type VideoInfo,
-} from '../extractor/index.ts';
+import { TranscriptError, messageFor, type ErrorCode } from '../extractor/errors.ts';
+import { pickDefaultTrack } from '../extractor/parsers.ts';
+import type { Transcript, VideoInfo } from '../extractor/types.ts';
 import { formatTimestamp, transcriptFile, transcriptFilename, transcriptToText } from '../format.ts';
+import { findMatches, splitMatches } from '../search.ts';
+import { getTranscript, getVideoInfo, seekTo } from './rpc.ts';
 
 type Load =
   | { phase: 'loading'; step: string }
@@ -24,6 +18,8 @@ interface Props {
   /** performance.now() when the user asked for this transcript (open, or navigated while open). */
   requestedAt: number;
   onClose: () => void;
+  /** Set when the popup couldn't talk to the tab at all (not YouTube, or the tab needs a reload). */
+  initialError?: TranscriptError;
 }
 
 const log = (...args: unknown[]) => console.info('[yt-transcriber]', ...args);
@@ -42,7 +38,7 @@ function toError(e: unknown): Load {
   return { phase: 'error', code: err.code, detail: err.detail };
 }
 
-export function App({ videoId, requestedAt, onClose }: Props) {
+export function App({ videoId, requestedAt, onClose, initialError }: Props) {
   const [video, setVideo] = useState<VideoInfo | null>(null);
   const [trackId, setTrackId] = useState<string | null>(null);
   const [load, setLoad] = useState<Load>({ phase: 'loading', step: 'Starting…' });
@@ -63,12 +59,16 @@ export function App({ videoId, requestedAt, onClose }: Props) {
     });
   }, []);
 
-  // 1. Video changed (or panel opened): read the player's track list and pick a default.
+  // 1. Popup opened: read the player's track list and pick a default.
   useEffect(() => {
     const gen = ++generation.current;
     startedAt.current = requestedAt;
     setVideo(null);
     setTrackId(null);
+    if (initialError) {
+      setLoad(toError(initialError));
+      return;
+    }
     if (!videoId) {
       setLoad({ phase: 'error', code: 'NOT_WATCH_PAGE' });
       return;
@@ -84,7 +84,7 @@ export function App({ videoId, requestedAt, onClose }: Props) {
       },
       (e) => gen === generation.current && setLoad(toError(e)),
     );
-  }, [videoId, requestedAt]);
+  }, [videoId, requestedAt, initialError]);
 
   // 2. Track chosen: cache first, then YouTube.
   useEffect(() => {
@@ -173,7 +173,7 @@ export function App({ videoId, requestedAt, onClose }: Props) {
           <h2>Transcript</h2>
           {video && <p className="sub" title={video.title}>{video.title}</p>}
         </div>
-        <button className="icon" onClick={onClose} aria-label="Close transcript" title="Close (Alt+T)">
+        <button className="icon" onClick={onClose} aria-label="Close transcript" title="Close (Esc)">
           ×
         </button>
       </header>
@@ -233,7 +233,8 @@ export function App({ videoId, requestedAt, onClose }: Props) {
             {load.step}
             {slow && (
               <p className="detail">
-                Waiting for the player. If an ad is playing or the video hasn't started yet, captions load once the video itself plays.
+                Waiting for the player. If an ad is playing or the video hasn't started, let the video play, then open this
+                popup again.
               </p>
             )}
           </div>
@@ -255,7 +256,7 @@ export function App({ videoId, requestedAt, onClose }: Props) {
         </p>
       )}
 
-      {ready && video && <TranscriptView video={video} transcript={ready.transcript} />}
+      {ready && video && <TranscriptView key={video.videoId} video={video} transcript={ready.transcript} />}
 
       {ready && (
         <footer className="foot">
@@ -277,6 +278,26 @@ function TranscriptView({ video, transcript }: { video: VideoInfo; transcript: T
   // Captions often stop before end credits; only flag a large gap.
   const endsEarly = lengthMs > 0 && endMs < lengthMs - Math.max(60_000, lengthMs * 0.1);
 
+  const [query, setQuery] = useState('');
+  const [current, setCurrent] = useState(0);
+  const listRef = useRef<HTMLOListElement>(null);
+  const matches = useMemo(() => findMatches(segs, query), [segs, query]);
+  const matchSet = useMemo(() => new Set(matches), [matches]);
+  const currentLine = matches[current];
+
+  useEffect(() => {
+    if (currentLine === undefined) return;
+    listRef.current?.querySelector(`[data-i="${currentLine}"]`)?.scrollIntoView({ block: 'center' });
+  }, [currentLine]);
+
+  const step = (delta: number) => {
+    if (matches.length) setCurrent((c) => (c + delta + matches.length) % matches.length);
+  };
+
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') step(e.shiftKey ? -1 : 1);
+  };
+
   return (
     <>
       {endsEarly && (
@@ -285,13 +306,39 @@ function TranscriptView({ video, transcript }: { video: VideoInfo; transcript: T
           everything YouTube provides for this track.
         </p>
       )}
-      <ol className="list">
+      <div className="search">
+        <input
+          type="search"
+          placeholder="Search transcript"
+          aria-label="Search transcript"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setCurrent(0);
+          }}
+          onKeyDown={onKey}
+        />
+        <span className="count" aria-live="polite">
+          {query.trim() ? (matches.length ? `${current + 1} / ${matches.length}` : 'No matches') : ''}
+        </span>
+        <button className="icon small" onClick={() => step(-1)} disabled={!matches.length} aria-label="Previous match" title="Previous (Shift+Enter)">
+          ↑
+        </button>
+        <button className="icon small" onClick={() => step(1)} disabled={!matches.length} aria-label="Next match" title="Next (Enter)">
+          ↓
+        </button>
+      </div>
+      <ol className="list" ref={listRef}>
         {segs.map((s, i) => (
-          <li key={i} className="row">
+          <li key={i} data-i={i} className={i === currentLine ? 'row current' : 'row'}>
             <button className="ts" onClick={() => void seekTo(s.startMs / 1000)} title="Jump to this point">
               {formatTimestamp(s.startMs, long)}
             </button>
-            <span className="text">{s.text}</span>
+            <span className="text">
+              {matchSet.has(i)
+                ? splitMatches(s.text, query).map((p, j) => (p.match ? <mark key={j}>{p.text}</mark> : p.text))
+                : s.text}
+            </span>
           </li>
         ))}
       </ol>

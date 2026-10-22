@@ -10,7 +10,8 @@ export { TranscriptError, messageFor, type ErrorCode } from './errors.ts';
 export { pickDefaultTrack, watchVideoId } from './parsers.ts';
 export type { CaptionTrack, Segment, Transcript, VideoInfo } from './types.ts';
 
-const BRIDGE_TIMEOUT_MS = 15_000;
+// Longer than the bridge's own worst case: player wait (15 s) + token (3 s) + panel fallback (10 s).
+const BRIDGE_TIMEOUT_MS = 40_000;
 const pending = new Map<string, (reply: BridgeReply) => void>();
 let listening = false;
 

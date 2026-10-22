@@ -4,8 +4,8 @@ A Chrome extension that shows the transcript of the YouTube video you're watchin
 timestamps, using only YouTube's own captions. No backend, no API keys, no third-party services,
 nothing that costs money. Personal use; not published to the Chrome Web Store.
 
-**v0.2**: transcript with seekable timestamps, caption track picker, copy and TXT download (with or
-without timestamps), local cache, and a fallback to YouTube's "Show transcript" panel
+**v0.3**: popup under the toolbar icon with the transcript, seekable timestamps, search, caption track
+picker, copy and TXT download (with or without timestamps), local cache, and a fallback to YouTube's "Show transcript" panel
 (**unverified**, see [Known limitations](#known-limitations)).
 
 ## Setup
@@ -24,26 +24,28 @@ Then in Chrome:
 1. Open `chrome://extensions` and turn on **Developer mode** (top right).
 2. Click **Load unpacked** and select the `dist` folder.
 3. **Reload any YouTube tabs that were already open.** The extension only attaches to pages loaded after it's installed.
-4. Pin the extension from the puzzle-piece menu so its icon stays visible (optional).
+4. Pin the extension from the puzzle-piece menu so its icon sits in the toolbar.
 
 **Updating after a code change:** `npm run build`, click the reload arrow on the extension's card in
 `chrome://extensions`, then reload the YouTube tab. `npm run watch` rebuilds on every save.
 
 ## Usage
 
-On a `youtube.com/watch` page, press **Alt+T** or click the toolbar icon. The panel drops down from the
-top right and stays open while you watch; press Alt+T or × to close it.
+On a `youtube.com/watch` page, click the toolbar icon or press **Alt+T**. The transcript opens in a
+popup directly under the icon. Like any Chrome extension popup, it closes when you click elsewhere
+(including the video); reopen it and the transcript comes back instantly from the cache.
 
-- **Click a timestamp** to jump the video there.
+- **Click a timestamp** to jump the video there (the popup stays open).
+- **Search** highlights every match and shows "3 / 17"; Enter / Shift+Enter or ↓ / ↑ step through them.
 - **Captions**: pick a track. Creator-uploaded tracks are listed under "Captions", YouTube's speech
   recognition under "Auto-generated". The default is a manual track in your browser language, then an
   auto-generated one in your language, then any manual track.
 - **Include timestamps On / Off**: applies to both Copy and Download, and is remembered.
 - **Copy** puts one caption per line on the clipboard. **Download** saves `Title [videoId].txt` with
   the title, link and track name at the top.
-- Navigating to another video while the panel is open loads the new transcript automatically.
 - The footer shows the line count and how long the load took ("from cache" when cached). Each load
-  also logs a timing breakdown to the page console, prefixed `[yt-transcriber]`.
+  also logs a timing breakdown to the popup's console (right-click the popup → Inspect), prefixed
+`[yt-transcriber]`.
 
 ## How it works
 
@@ -80,10 +82,11 @@ src/extractor/              ALL YouTube-specific logic; when YouTube changes, fi
   panel-fallback.ts         opens and reads the "Show transcript" panel
   panel-parsers.ts          pure: panel JSON / panel rows → lines
   protocol.ts, errors.ts, types.ts
-src/content/                panel UI (React in a Shadow DOM) and video-change detection
+src/content/index.ts        content script: relays popup requests to the extractor (draws nothing on YouTube)
+src/popup/                  the popup UI (React): App.tsx, styles.ts, rpc.ts (talks to the tab)
+src/rpc.ts                  popup ↔ content script message types
 src/cache.ts                chrome.storage.local cache
-src/format.ts               timestamps and TXT export
-src/background.ts           toolbar icon / Alt+T → open the panel
+src/format.ts, search.ts    timestamps, TXT export, transcript search
 test/                       unit tests; test/fixtures/ holds real YouTube responses
 docs/manual-test-checklist.md
 scripts/capture-transcript-panel.js   dev helper for checking the panel fallback
@@ -111,12 +114,13 @@ the transcript you opened least recently is removed first, and entries expire af
 
 | Symptom | Fix |
 |---|---|
-| Alt+T / the icon does nothing | Reload the YouTube tab: tabs opened before the extension was installed or reloaded have no script. If Alt+T still does nothing, another extension may use it; change it at `chrome://extensions/shortcuts`. |
-| "Waiting for the player…" | An ad is playing or the video hasn't started. Press play; the transcript loads once the video itself plays. |
+| "Reload this YouTube tab…" | The tab was opened before the extension was installed or reloaded. Reload it. |
+| Alt+T does nothing | Another extension may use it; change it at `chrome://extensions/shortcuts`. |
+| "Waiting for the player…" | An ad is playing or the video hasn't started. Let the video play, then open the popup again. |
 | "YouTube returned no caption data… press play once" | The player never loaded captions. Play the video for a second, then reopen the panel. |
 | "YouTube returned no caption data" (other) | YouTube blocked the caption request and the panel fallback failed too. Reload the tab and retry; if it persists, YouTube changed something. See below. |
 | "YouTube's page structure has changed…" | The player API or markup the extension relies on moved. Fix `src/extractor/` (start with the detail line shown under the message). |
-| Transcript looks out of date | Captions were edited after caching. Clear the cache: on `chrome://extensions`, open the extension's service worker console (the "service worker" link on its card) and run `chrome.storage.local.clear()`. |
+| Transcript looks out of date | Captions were edited after caching. Clear the cache: right-click the popup → Inspect, and in that console run `chrome.storage.local.clear()`. |
 | Wrong language | Pick another track in the Captions menu. If the note says it came from the transcript panel, the panel uses its own language choice. |
 
 **When YouTube changes:** check the page console for `[yt-transcriber]` lines, then work in
@@ -138,8 +142,8 @@ and add a test before changing a parser.
 - **Live streams and premieres** aren't supported until they've ended and been processed.
 - **Watch pages only**: not Shorts, embeds, or `m.youtube.com`.
 - **Age-restricted videos** need you to be signed in with an age-verified account.
-- **Arrow position** points at the top-right corner. A page can't know exactly where Chrome places
-  the extension icon.
+- **The popup closes when you click outside it.** That's how Chrome extension popups work. Clicking
+  timestamps inside it keeps it open; reopening is instant thanks to the cache.
 - **Depends on YouTube internals** (player API, request format). A YouTube update can break it; the
   error messages say which part failed.
 - **Translations:** YouTube's auto-translate languages aren't offered (the code supports `tlang`, but the

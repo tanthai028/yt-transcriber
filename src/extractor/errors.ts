@@ -1,5 +1,6 @@
 export type ErrorCode =
   | 'NOT_WATCH_PAGE'
+  | 'RELOAD_TAB'
   | 'NO_CAPTIONS'
   | 'LIVE'
   | 'AGE_RESTRICTED'
@@ -12,6 +13,7 @@ export type ErrorCode =
 
 const MESSAGES: Record<ErrorCode, string> = {
   NOT_WATCH_PAGE: 'Open a YouTube video to see its transcript.',
+  RELOAD_TAB: 'Reload this YouTube tab so the extension can attach to it, then open the transcript again.',
   NO_CAPTIONS:
     'No captions available for this video. Either none were uploaded or generated, or the creator disabled them (YouTube reports both the same way).',
   LIVE: 'This is a live stream or an upcoming premiere. Transcripts are available once it has ended and been processed.',

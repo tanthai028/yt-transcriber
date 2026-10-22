@@ -1,4 +1,4 @@
-// Bundles the three extension scripts into dist/ and copies the manifest.
+// Bundles the extension scripts into dist/ and copies the manifest and popup page.
 // Usage: node build.mjs [--watch]
 import { copyFile, mkdir, rm } from 'node:fs/promises';
 import * as esbuild from 'esbuild';
@@ -8,13 +8,14 @@ const watch = process.argv.includes('--watch');
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist');
 await copyFile('manifest.json', 'dist/manifest.json');
+await copyFile('src/popup/popup.html', 'dist/popup.html');
 
 /** @type {import('esbuild').BuildOptions} */
 const options = {
   entryPoints: {
     'page-bridge': 'src/extractor/page-bridge.ts',
-    content: 'src/content/index.tsx',
-    background: 'src/background.ts',
+    content: 'src/content/index.ts',
+    popup: 'src/popup/index.tsx',
   },
   outdir: 'dist',
   bundle: true,
