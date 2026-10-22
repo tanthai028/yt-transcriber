@@ -31,7 +31,8 @@ export interface PlayerApi {
   getPlayerResponse(videoId: string): Promise<PlayerResponse>;
   fetchTrack(videoId: string, baseUrl: string): Promise<{ body: string; timings: Record<string, number> }>;
   panelTranscript(videoId: string): ReturnType<typeof readTranscriptPanel>;
-  seek(seconds: number): Promise<null>;
+  /** `videoId` picks the right player when a page has more than one (desktop Shorts). */
+  seek(seconds: number, videoId?: string): Promise<null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,9 +105,21 @@ export function installHooks(): void {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function player(): Player | null {
-  return document.getElementById('movie_player') as Player | null;
+/**
+ * The player showing `videoId`. Watch pages (desktop and m.youtube.com) have one, #movie_player;
+ * desktop Shorts add #shorts-player while a hidden #movie_player may still hold an older video.
+ */
+function player(videoId?: string): Player | null {
+  const all = [...document.querySelectorAll<Player>('#movie_player, #shorts-player, .html5-video-player')];
+  if (videoId) {
+    const showing = all.find((p) => p.getVideoData?.()?.video_id === videoId);
+    if (showing) return showing;
+  }
+  return all.find((p) => p.id === 'movie_player') ?? all[0] ?? null;
 }
+
+/** The video the main player has loaded, for detecting the video when the URL doesn't say. */
+export const playerVideoId = (): string | undefined => player()?.getVideoData?.()?.video_id;
 
 async function waitFor<T>(fn: () => T | null | undefined | false, timeoutMs: number, stepMs = 25): Promise<T | null> {
   const end = performance.now() + timeoutMs;
@@ -124,7 +137,7 @@ async function waitFor<T>(fn: () => T | null | undefined | false, timeoutMs: num
  */
 async function getPlayerResponse(videoId: string): Promise<PlayerResponse> {
   const pr = await waitFor(() => {
-    const p = player();
+    const p = player(videoId);
     if (!p?.getPlayerResponse || !p.getVideoData) return null;
     if (p.getVideoData()?.video_id !== videoId) return null;
     const r = p.getPlayerResponse();
@@ -139,39 +152,46 @@ async function getPlayerResponse(videoId: string): Promise<PlayerResponse> {
   const initial = (window as unknown as { ytInitialPlayerResponse?: PlayerResponse }).ytInitialPlayerResponse;
   if (initial?.videoDetails?.videoId === videoId) return initial;
 
-  const p = player();
+  const p = player(videoId);
   if (!p) throw new TranscriptError('PAGE_CHANGED', 'video player element not found');
   if (!p.getPlayerResponse) throw new TranscriptError('PAGE_CHANGED', 'player API not found');
   throw new TranscriptError('PAGE_CHANGED', 'player did not load this video in time');
 }
 
-/**
- * Ended, playing or paused, and not showing an ad: then the player loads captions on request.
- * Not when unstarted (-1) or cued (5): it ignores the request until the video has played.
- */
-function playerReady(p: Player): boolean {
-  const state = p.getPlayerState?.();
-  return (state === 0 || state === 1 || state === 2) && !p.classList.contains('ad-showing');
-}
+type CaptionPlayer = Player & Required<Pick<Player, 'toggleSubtitles' | 'isSubtitlesOn'>>;
+const hasCaptionApi = (p: Player | null): p is CaptionPlayer => !!p?.toggleSubtitles && !!p.isSubtitlesOn;
+const showingAd = (p: Player) => p.classList.contains('ad-showing');
+/** Ended, playing or paused (not unstarted -1 / cued 5), and no ad. */
+const playing = (p: Player) => [0, 1, 2].includes(p.getPlayerState?.() ?? -1) && !showingAd(p);
 
 /**
- * Make the player request captions for the current video so we can observe its token, then put
- * the user's CC state back. First a CC off/on; if the player serves that from its own cache (seen
- * when our hooks were installed late, as in the bookmarklet), ask it for a translation of the current
- * track, which always triggers a request. Its token works for every track of the video.
+ * Make the player request captions for the current video so we can observe its token.
+ * Tried right away, even before the video has played: that works on the mobile site, where videos
+ * don't autoplay. Only if that fails, wait for an ad to end or the video to start, and try again.
  */
 async function captureToken(videoId: string): Promise<string | null> {
   const existing = captured.get(videoId);
   if (existing) return existing;
 
-  const p = player();
-  if (!p?.toggleSubtitles || !p.isSubtitlesOn) throw new TranscriptError('PAGE_CHANGED', 'player subtitle API not found');
+  const p = player(videoId);
+  if (!hasCaptionApi(p)) throw new TranscriptError('PAGE_CHANGED', 'player subtitle API not found');
 
-  // Still starting up, or a pre-roll ad: wait (the player may also fetch captions by itself meanwhile).
-  const early = await waitFor(() => captured.get(videoId) ?? playerReady(p), 15_000, 50);
-  if (typeof early === 'string') return early;
-  if (!early) return null;
+  if (!showingAd(p)) {
+    const now = await requestCaptions(p, videoId);
+    if (now) return now;
+  }
+  // A pre-roll ad, or a player that won't load captions yet: wait (it may also fetch them by itself).
+  const later = await waitFor(() => captured.get(videoId) ?? playing(p), 15_000, 50);
+  if (typeof later === 'string') return later;
+  return later ? requestCaptions(p, videoId) : null;
+}
 
+/**
+ * First a CC off/on; if the player serves that from its own cache (seen when our hooks were installed
+ * late, as in the bookmarklet), ask it for a translation of the current track, which always triggers a
+ * request. Its token works for every track of the video. The user's CC state is put back either way.
+ */
+async function requestCaptions(p: CaptionPlayer, videoId: string): Promise<string | null> {
   const wasOn = p.isSubtitlesOn();
   try {
     if (wasOn) p.toggleSubtitles(); // off then on forces a (re)load
@@ -216,7 +236,7 @@ async function fetchTrack(videoId: string, baseUrl: string) {
   const playerUrl = await captureToken(videoId);
   timings.tokenMs = Math.round(performance.now() - t);
   if (!playerUrl) {
-    const p = player();
+    const p = player(videoId);
     const state = p?.getPlayerState?.();
     const hint = p?.classList.contains('ad-showing')
       ? 'an ad is playing; try again when it ends'
@@ -245,8 +265,8 @@ export const playerApi: PlayerApi = {
     if (currentVideoId() !== videoId) throw new TranscriptError('PAGE_CHANGED', 'player is on a different video');
     return readTranscriptPanel(videoId);
   },
-  async seek(seconds) {
-    const p = player();
+  async seek(seconds, videoId) {
+    const p = player(videoId);
     if (!p?.seekTo) throw new TranscriptError('PAGE_CHANGED', 'player seek API not found');
     p.seekTo(seconds, true);
     return null;

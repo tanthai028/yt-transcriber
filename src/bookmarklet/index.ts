@@ -5,8 +5,9 @@
 
 import { TranscriptError, messageFor } from '../extractor/errors.ts';
 import { createExtractor } from '../extractor/index.ts';
-import { pickDefaultTrack, watchVideoId } from '../extractor/parsers.ts';
-import { installHooks, playerApi } from '../extractor/player.ts';
+import { pickDefaultTrack } from '../extractor/parsers.ts';
+import { installHooks, playerApi, playerVideoId } from '../extractor/player.ts';
+import { describeMiss, detectVideo, domClues } from '../extractor/video-id.ts';
 import type { CaptionTrack, Transcript, VideoInfo } from '../extractor/types.ts';
 import { formatTimestamp, transcriptFile, transcriptFilename, transcriptToText } from '../format.ts';
 import { css as popupCss } from '../popup/styles.ts';
@@ -108,7 +109,12 @@ function start(): void {
   }
 
   function showError(e: unknown) {
-    const err = e instanceof TranscriptError ? e : new TranscriptError('PAGE_CHANGED', String(e));
+    let err = e instanceof TranscriptError ? e : new TranscriptError('PAGE_CHANGED', String(e));
+    // The mobile site is supported, but if it's what changed, the desktop site is the quickest way around it.
+    if (location.hostname.startsWith('m.') && (err.code === 'PAGE_CHANGED' || err.code === 'BLOCKED')) {
+      const hint = 'On the mobile site (m.youtube.com): if this keeps happening, tap aA → Request Desktop Website and try again.';
+      err = new TranscriptError(err.code, err.detail ? `${err.detail}. ${hint}` : hint);
+    }
     log('failed', err.code, err.detail ?? '');
     body.replaceChildren(
       h(
@@ -144,9 +150,11 @@ function start(): void {
     const startedAt = performance.now();
     current = null;
     setTheme();
-    const videoId = watchVideoId(location.href);
+    const found = detectVideo({ ...domClues(document, location.href), playerVideoId: playerVideoId() });
+    const videoId = found.videoId;
     sub.textContent = '';
-    if (!videoId) return showError(new TranscriptError('NOT_WATCH_PAGE'));
+    if (!videoId) return showError(new TranscriptError('NOT_WATCH_PAGE', describeMiss(found)));
+    log(`video ${videoId} from the ${found.source} (${found.where}${found.kind ? `, ${found.kind} URL` : ''})`);
     showStatus('Reading caption tracks…');
     try {
       const video = await extractor.getVideoInfo(videoId);
@@ -235,7 +243,7 @@ function start(): void {
         className: 'ts',
         textContent: formatTimestamp(s.startMs, long),
         title: 'Jump to this point',
-        onclick: () => void extractor.seekTo(s.startMs / 1000),
+        onclick: () => void extractor.seekTo(s.startMs / 1000, video.videoId),
       });
       const row = h('li', { className: 'row' }, ts, text);
       textEls.push(text);
@@ -305,12 +313,19 @@ function start(): void {
     if (open) void loadVideo();
   }
 
-  // Reload when YouTube navigates in-app to another video while the panel is open.
-  let lastUrl = location.href;
-  document.addEventListener('yt-navigate-finish', () => {
-    if (open && location.href !== lastUrl) void loadVideo();
-    lastUrl = location.href;
-  });
+  // Reload when YouTube navigates in-app to another video while the panel is open. The desktop site
+  // fires yt-navigate-finish; the mobile site doesn't, so also watch the URL (cheap, once a second).
+  // Only a different video counts: YouTube also rewrites the URL in place (e.g. &si= → &pp= on mobile).
+  const videoKey = () => detectVideo(domClues(document, location.href)).videoId ?? location.pathname;
+  let lastVideo = videoKey();
+  const onNavigate = () => {
+    const now = videoKey();
+    if (now === lastVideo) return;
+    lastVideo = now;
+    if (open) void loadVideo();
+  };
+  document.addEventListener('yt-navigate-finish', onNavigate);
+  setInterval(onNavigate, 1000);
 
   window.__ytTranscriber = { toggle };
   void loadVideo();

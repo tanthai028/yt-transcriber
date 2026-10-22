@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>YT Transcriber</title>
-    <meta name="description" content="Transcripts of YouTube videos, with clickable timestamps, search, copy and download. Works on iPad." />
+    <meta name="description" content="Transcripts of YouTube videos, with clickable timestamps, search, copy and download. Works on iPhone and iPad." />
     <style>
       :root {
         --bg: #f8f9fa; --card: #ffffff; --fg: #1f1f1f; --muted: #5f6368; --line: #dadce0;
@@ -75,12 +75,22 @@
       <section class="card">
         <h2>3. Use it</h2>
         <ol>
-          <li>Open a video on <strong>youtube.com</strong> in Safari (not the YouTube app).</li>
-          <li>Open Bookmarks and tap <strong>YT Transcript</strong>. The transcript appears at the top right of the page.</li>
+          <li>
+            Open a video in Safari (not the YouTube app). Regular videos, Shorts, <code>youtu.be</code> links and links
+            with a timestamp all work, on the mobile site (<code>m.youtube.com</code>) and the desktop site.
+          </li>
+          <li>
+            Open the <strong>Bookmarks list</strong> (book icon; on iPhone it's under the tabs or ⋯ button) and tap
+            <strong>YT Transcript</strong> there. The transcript appears at the top right of the page.
+          </li>
           <li>Tap a timestamp to jump there. Tap the bookmark again to hide or show the panel.</li>
         </ol>
         <p class="muted">
-          If nothing happens, let the video play for a second and tap it again. Updates to this site reach the bookmarklet
+          <strong>"Cannot Run Script"?</strong> Safari blocks bookmarklets started from the address bar (typing the
+          bookmark's name and tapping the suggestion). Start it from the Bookmarks list instead.
+        </p>
+        <p class="muted">
+          If the panel shows an error, its grey line says what was detected. Updates to this site reach the bookmarklet
           automatically; there's nothing to reinstall.
         </p>
       </section>
@@ -93,7 +103,7 @@
       // YouTube's Trusted Types rule needs the code wrapped by a policy before eval.
       const src = location.origin + '/bookmarklet.js';
       const loader =
-        "(()=>{if(!/(^|\\.)youtube\\.com$/.test(location.hostname))return alert('Open a YouTube video first, then use this bookmark.');" +
+        "(()=>{if(!/(^|\\.)(youtube\\.com|youtube-nocookie\\.com)$/.test(location.hostname))return alert('YT Transcriber works on YouTube pages; this page is '+location.hostname+'. Open the video on youtube.com in Safari, then tap the bookmark.');" +
         'if(window.__ytTranscriber)return window.__ytTranscriber.toggle();' +
         `fetch(${JSON.stringify(src)},{cache:'no-store'})` +
         ".then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.text()})" +

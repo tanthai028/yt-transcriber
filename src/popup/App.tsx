@@ -331,7 +331,7 @@ function TranscriptView({ video, transcript }: { video: VideoInfo; transcript: T
       <ol className="list" ref={listRef}>
         {segs.map((s, i) => (
           <li key={i} data-i={i} className={i === currentLine ? 'row current' : 'row'}>
-            <button className="ts" onClick={() => void seekTo(s.startMs / 1000)} title="Jump to this point">
+            <button className="ts" onClick={() => void seekTo(s.startMs / 1000, video.videoId)} title="Jump to this point">
               {formatTimestamp(s.startMs, long)}
             </button>
             <span className="text">

@@ -3,6 +3,7 @@
 
 import { TranscriptError } from './errors.ts';
 import type { CaptionTrack, Segment, TrackKind, VideoInfo } from './types.ts';
+import { parseVideoUrl } from './video-id.ts';
 
 // ---------------------------------------------------------------------------
 // Player response → video info + track list
@@ -205,10 +206,12 @@ const TRACK_PARAMS = ['lang', 'kind', 'name', 'variant', 'tlang'] as const;
 /**
  * Primary: the track's own signed baseUrl, plus every parameter the player added
  * to its own request (pot, potc, c, cver, …). Verified to work for manual and ASR tracks.
+ * The mobile site gives relative baseUrls ("/api/timedtext?…"); they resolve against the
+ * player's request, which is always absolute and on the page's own host (www. or m.).
  */
 export function buildTrackUrl(baseUrl: string, playerRequestUrl: string): string {
-  const base = new URL(baseUrl);
-  const player = new URL(playerRequestUrl, base);
+  const player = new URL(playerRequestUrl);
+  const base = new URL(baseUrl, player);
   for (const [k, v] of player.searchParams) {
     if (!base.searchParams.has(k) && !(TRACK_PARAMS as readonly string[]).includes(k)) base.searchParams.set(k, v);
   }
@@ -221,8 +224,8 @@ export function buildTrackUrl(baseUrl: string, playerRequestUrl: string): string
  * Used when the baseUrl was signed in a different player session than the token.
  */
 export function buildTemplateUrl(baseUrl: string, playerRequestUrl: string): string {
-  const base = new URL(baseUrl);
-  const url = new URL(playerRequestUrl, base);
+  const url = new URL(playerRequestUrl);
+  const base = new URL(baseUrl, url);
   for (const k of TRACK_PARAMS) {
     const v = base.searchParams.get(k);
     if (v === null) url.searchParams.delete(k);
@@ -232,14 +235,7 @@ export function buildTemplateUrl(baseUrl: string, playerRequestUrl: string): str
   return url.toString();
 }
 
-/** Video ID from a youtube.com/watch URL, or null for any other page. */
+/** Video ID from any YouTube video URL (watch, Shorts, youtu.be, live, embed), or null. */
 export function watchVideoId(href: string): string | null {
-  try {
-    const u = new URL(href);
-    if (!/(^|\.)youtube\.com$/.test(u.hostname) || u.pathname !== '/watch') return null;
-    const v = u.searchParams.get('v');
-    return v && /^[\w-]{11}$/.test(v) ? v : null;
-  } catch {
-    return null;
-  }
+  return parseVideoUrl(href).videoId;
 }

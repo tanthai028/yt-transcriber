@@ -69,4 +69,11 @@ Deploy first (`npx vercel --prod`), then open the install page.
 | B5 | Toggle | Tap the bookmark twice | Panel hides, then shows and reloads | |
 | B6 | In-app navigation | With the panel open, tap a related video | Panel reloads for the new video | |
 | B7 | Search, seek, switch track, copy, download | As in cases 9–12 | Same results as the extension | |
-| B8 | Not YouTube | Tap the bookmark on another site | "Open a YouTube video first…" alert | |
+| B8 | Not YouTube | Tap the bookmark on another site | Alert naming the page ("…this page is example.com") | |
+| B9 | iPhone, mobile site | Regular video on `m.youtube.com`, not yet played → tap the bookmark from the Bookmarks list | Transcript loads | |
+| B10 | iPhone, Short | Open a Short in Safari → tap the bookmark | Transcript loads; timestamps seek the Short | |
+| B11 | iPhone, youtu.be | Open a `youtu.be/…` link in Safari → tap the bookmark | Transcript loads | |
+| B12 | iPhone, timestamp link | Open a link with `&t=90s` → tap the bookmark | Transcript loads (the `t` is ignored) | |
+| B13 | iPhone, desktop site | aA → Request Desktop Website → tap the bookmark | Transcript loads | |
+| B14 | Address bar | Start the bookmark by typing its name in the address bar | Safari's "Cannot Run Script" (expected; use the Bookmarks list) | |
+| B15 | Not a video | Tap the bookmark on the home page | "Open a YouTube video…" with a grey line naming the page | |

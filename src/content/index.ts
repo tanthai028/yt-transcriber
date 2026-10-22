@@ -1,19 +1,27 @@
 // Content script (isolated world). Draws nothing on YouTube: it relays requests from the popup
 // to the extraction module, which talks to the player through page-bridge.
 
-import { TranscriptError, getTranscript, getVideoInfo, seekTo, watchVideoId } from '../extractor/index.ts';
+import { TranscriptError, getTranscript, getVideoInfo, seekTo } from '../extractor/index.ts';
+import { describeMiss, detectVideo, domClues } from '../extractor/video-id.ts';
 import { RPC_TYPE, type RpcMessage, type RpcReply, type RpcRequest } from '../rpc.ts';
 
 async function handle(req: RpcRequest): Promise<unknown> {
   switch (req.method) {
-    case 'page':
-      return { videoId: watchVideoId(location.href), dark: document.documentElement.hasAttribute('dark') };
+    case 'page': {
+      // The player isn't reachable from here (isolated world); URL, canonical link and og:url are.
+      const found = detectVideo(domClues(document, location.href));
+      return {
+        videoId: found.videoId,
+        detail: found.videoId ? undefined : describeMiss(found),
+        dark: document.documentElement.hasAttribute('dark'),
+      };
+    }
     case 'getVideoInfo':
       return getVideoInfo(req.videoId);
     case 'getTranscript':
       return getTranscript(req.video, req.track);
     case 'seek':
-      return seekTo(req.seconds);
+      return seekTo(req.seconds, req.videoId);
   }
 }
 

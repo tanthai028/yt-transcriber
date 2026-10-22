@@ -4,8 +4,8 @@ Shows the transcript of the YouTube video you're watching, with clickable timest
 YouTube's own captions. No backend, no API keys, nothing that costs money. Two ways to use it:
 
 - **Chrome extension**: a popup under the toolbar icon.
-- **Bookmarklet** (iPad Safari, or any browser): a panel on the YouTube page, installed from a static
-  site you host on Vercel. See [iPad and other browsers](#ipad-and-other-browsers-bookmarklet).
+- **Bookmarklet** (iPhone and iPad Safari, or any browser): a panel on the YouTube page, installed from
+  a static site you host on Vercel. See [iPhone, iPad and other browsers](#iphone-ipad-and-other-browsers-bookmarklet).
 
 **v0.4**: transcript with seekable timestamps, search, caption track picker, copy and TXT download
 (with or without timestamps), local cache (extension), and a fallback to YouTube's "Show transcript"
@@ -50,7 +50,7 @@ popup directly under the icon. Like any Chrome extension popup, it closes when y
   also logs a timing breakdown to the popup's console (right-click the popup → Inspect), prefixed
 `[yt-transcriber]`.
 
-## iPad and other browsers (bookmarklet)
+## iPhone, iPad and other browsers (bookmarklet)
 
 The `dist-web/` build is a static site: an install page plus `bookmarklet.js`. The bookmarklet you save
 is a few hundred characters long. When you tap it on a YouTube video, it downloads the latest
@@ -72,13 +72,28 @@ header that lets the YouTube page download `bookmarklet.js`. The first deploy as
 `yt-transcriber` gives `yt-transcriber.vercel.app` if that name is free. Run `npx vercel --prod` again
 after changes; bookmarklets pick up the new code automatically.
 
-### Install on iPad
+### Install on iPhone or iPad
 
-Open your site in Safari and follow its steps: **Copy bookmarklet**, bookmark the page, then edit that
-bookmark and replace its address with the copied code. To use it, open a video on youtube.com in
-Safari (not the YouTube app) and tap the bookmark. Tap it again to hide or show the panel.
+1. Open your site in Safari and tap **Copy bookmarklet**.
+2. Bookmark that page: Share → **Add Bookmark** → Save.
+3. Open the Bookmarks list → **Edit** → tap the new bookmark. Rename it `YT Transcript`, replace its
+   address with the copied code, and tap **Done**.
 
 On a computer, drag **YT Transcript** from the install page to the bookmarks bar.
+
+### Use on iPhone or iPad
+
+1. Open the video in **Safari**, not the YouTube app. All of these work, on the mobile site
+   (`m.youtube.com`, the iPhone default) and the desktop site (the iPad default):
+   `youtube.com/watch?v=…`, Shorts (`/shorts/…`), `youtu.be/…` links, `/live/…`, and links with
+   `&t=`, `&list=` or `&si=`. The video doesn't need to be playing.
+2. Open the **Bookmarks list** (book icon; on iPhone it's under the tabs or ⋯ button) and tap
+   **YT Transcript** there. Don't start it from the address bar: Safari blocks bookmarklets started
+   that way and shows "Cannot Run Script".
+3. The panel appears at the top right. Tap a timestamp to seek; tap the bookmark again to hide or show it.
+
+If something fails, the panel's grey detail line says what it detected: the page, the URL type, and
+where it looked for the video ID.
 
 ## How it works
 
@@ -159,7 +174,10 @@ the transcript you opened least recently is removed first, and entries expire af
 | "YouTube returned no caption data" (other) | YouTube blocked the caption request and the panel fallback failed too. Reload the tab and retry; if it persists, YouTube changed something. See below. |
 | "YouTube's page structure has changed…" | The player API or markup the extension relies on moved. Fix `src/extractor/` (start with the detail line shown under the message). |
 | Transcript looks out of date | Captions were edited after caching. Clear the cache: right-click the popup → Inspect, and in that console run `chrome.storage.local.clear()`. |
-| Bookmarklet: nothing happens on iPad | Make sure you're on youtube.com in Safari, not the YouTube app, and that the bookmark's address starts with `javascript:`. Let the video play for a second, then tap it again. |
+| Bookmarklet: "Cannot Run Script" (Safari) | You started it from the address bar. Open the Bookmarks list and tap it there. |
+| Bookmarklet: nothing happens | Make sure you're on YouTube in Safari, not the YouTube app, and that the bookmark's address starts with `javascript:`. |
+| Bookmarklet: "works on YouTube pages; this page is …" | The alert names the page it ran on; open the video on youtube.com first. |
+| Bookmarklet: "Open a YouTube video…" with a grey detail line | The detail says what was checked (e.g. `m.youtube.com/feed/trending: not a video page`). If it names a real video page, send me that line. |
 | Bookmarklet: "could not load" | Your Vercel site is unreachable, or `bookmarklet.js` lacks the CORS header. Open `https://<your-site>/bookmarklet.js` to check it loads. |
 | Wrong language | Pick another track in the Captions menu. If the note says it came from the transcript panel, the panel uses its own language choice. |
 
@@ -180,10 +198,9 @@ and add a test before changing a parser.
 - **Captions only.** Videos without captions (or with captions disabled by the creator; YouTube reports
   both the same way) have no transcript. Audio transcription is out of scope for v1.
 - **Live streams and premieres** aren't supported until they've ended and been processed.
-- **Watch pages only**: not Shorts or embeds. The extension runs on `www.youtube.com` only; the
-  bookmarklet also accepts `m.youtube.com`, but it was only tested on the desktop site.
-- **Bookmarklet on iPad is untested.** I tested it on desktop Chrome against live YouTube. Whether
-  iPad Safari runs bookmarklets on YouTube, given its security policy, needs a check on a real iPad.
+- **Sites:** the extension runs on `www.youtube.com` (watch pages and Shorts). The bookmarklet also runs
+  on `m.youtube.com`. Both were tested on live YouTube by emulating a phone in desktop Chrome, not in
+  real iPhone Safari; your iPhone test showed Safari runs it once started from the Bookmarks list.
   The bookmarklet has no cache and no Alt+T shortcut, and if YouTube ever restricts which Trusted Types
   policies pages may create, the loader will stop working.
 - **Age-restricted videos** need you to be signed in with an age-verified account.

@@ -8,6 +8,8 @@ export const RPC_TYPE = 'yt-transcriber/rpc';
 
 export interface PageInfo {
   videoId: string | null;
+  /** When videoId is null: what was looked at, for the error message. */
+  detail?: string;
   /** YouTube's dark theme is on. */
   dark: boolean;
 }
@@ -16,7 +18,7 @@ export type RpcRequest =
   | { method: 'page' }
   | { method: 'getVideoInfo'; videoId: string }
   | { method: 'getTranscript'; video: VideoInfo; track: CaptionTrack }
-  | { method: 'seek'; seconds: number };
+  | { method: 'seek'; seconds: number; videoId?: string };
 
 export interface RpcResults {
   page: PageInfo;

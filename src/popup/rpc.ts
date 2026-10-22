@@ -1,7 +1,6 @@
 // Popup side of the RPC: sends requests to the content script on the active YouTube tab.
 
 import { TranscriptError } from '../extractor/errors.ts';
-import { watchVideoId } from '../extractor/parsers.ts';
 import type { TranscriptResult } from '../extractor/index.ts';
 import type { CaptionTrack, VideoInfo } from '../extractor/types.ts';
 import { RPC_TYPE, type RpcMessage, type RpcReply, type RpcRequest, type RpcResults } from '../rpc.ts';
@@ -11,8 +10,8 @@ const activeTab = chrome.tabs.query({ active: true, currentWindow: true }).then(
 async function rpc<M extends RpcRequest['method']>(req: Extract<RpcRequest, { method: M }>): Promise<RpcResults[M]> {
   const tab = await activeTab;
   // Without the "tabs" permission, Chrome only reveals the URL of tabs we have host access to,
-  // so a missing URL means "not YouTube".
-  if (tab?.id === undefined || !tab.url || !watchVideoId(tab.url)) throw new TranscriptError('NOT_WATCH_PAGE');
+  // so a missing URL means "not YouTube". Which video it is, the content script decides.
+  if (tab?.id === undefined || !tab.url) throw new TranscriptError('NOT_WATCH_PAGE', 'this tab is not on youtube.com');
   let reply: RpcReply | undefined;
   try {
     const msg: RpcMessage = { type: RPC_TYPE, req };
@@ -30,4 +29,4 @@ export const getPageInfo = () => rpc({ method: 'page' });
 export const getVideoInfo = (videoId: string) => rpc({ method: 'getVideoInfo', videoId });
 export const getTranscript = (video: VideoInfo, track: CaptionTrack): Promise<TranscriptResult> =>
   rpc({ method: 'getTranscript', video, track });
-export const seekTo = (seconds: number) => rpc({ method: 'seek', seconds });
+export const seekTo = (seconds: number, videoId?: string) => rpc({ method: 'seek', seconds, videoId });

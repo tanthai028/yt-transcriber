@@ -47,7 +47,7 @@ const bridgeApi: PlayerApi = {
   getPlayerResponse: (videoId) => call({ kind: 'getPlayerResponse', videoId }),
   fetchTrack: (videoId, baseUrl) => call({ kind: 'fetchTrack', videoId, baseUrl }),
   panelTranscript: (videoId) => call({ kind: 'panelTranscript', videoId }),
-  seek: (seconds) => call({ kind: 'seek', seconds }),
+  seek: (seconds, videoId) => call({ kind: 'seek', seconds, videoId }),
 };
 
 export interface TranscriptResult {
@@ -104,7 +104,7 @@ export function createExtractor(api: PlayerApi) {
       }
     },
 
-    seekTo: (seconds: number): Promise<null> => api.seek(seconds),
+    seekTo: (seconds: number, videoId?: string): Promise<null> => api.seek(seconds, videoId),
   };
 }
 

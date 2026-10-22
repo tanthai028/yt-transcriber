@@ -184,6 +184,18 @@ describe('timedtext URLs', () => {
     assert.equal(u.searchParams.get('variant'), 'gemini');
   });
 
+  it("resolves the mobile site's relative baseUrls against the player's own host", () => {
+    const mobileBase = '/api/timedtext?v=jNQXAC9IVRw&ei=EI&exp=xpe&sparams=ip&signature=SIG&key=yt8&lang=de';
+    const mobilePlayer = 'https://m.youtube.com/api/timedtext?v=jNQXAC9IVRw&lang=en&pot=TOKEN&c=MWEB';
+    for (const build of [buildTrackUrl, buildTemplateUrl]) {
+      const u = new URL(build(mobileBase, mobilePlayer));
+      assert.equal(u.host, 'm.youtube.com');
+      assert.equal(u.searchParams.get('lang'), 'de');
+      assert.equal(u.searchParams.get('pot'), 'TOKEN');
+      assert.equal(u.searchParams.get('c'), 'MWEB');
+    }
+  });
+
   it('buildTemplateUrl swaps only track params into the player request', () => {
     const u = new URL(buildTemplateUrl(asrBase, playerReq));
     assert.equal(u.searchParams.get('signature'), 'OTHERSIG');
@@ -196,10 +208,10 @@ describe('timedtext URLs', () => {
 });
 
 describe('watchVideoId', () => {
-  it('extracts the ID only on watch pages', () => {
+  it('extracts the ID only on video pages', () => {
     assert.equal(watchVideoId('https://www.youtube.com/watch?v=jNQXAC9IVRw&t=5s'), 'jNQXAC9IVRw');
     assert.equal(watchVideoId('https://www.youtube.com/'), null);
-    assert.equal(watchVideoId('https://www.youtube.com/shorts/jNQXAC9IVRw'), null);
+    assert.equal(watchVideoId('https://www.youtube.com/shorts/jNQXAC9IVRw'), 'jNQXAC9IVRw');
     assert.equal(watchVideoId('https://www.youtube.com/watch?v=bad'), null);
     assert.equal(watchVideoId('https://evil.example/watch?v=jNQXAC9IVRw'), null);
   });

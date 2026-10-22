@@ -19,7 +19,8 @@ getPageInfo().then(
   (page) => {
     // Follow YouTube's theme; fall back to the system theme if the page didn't say.
     document.documentElement.classList.toggle('dark', page.dark);
-    root.render(<App videoId={page.videoId} requestedAt={requestedAt} onClose={close} />);
+    const notFound = page.videoId ? undefined : new TranscriptError('NOT_WATCH_PAGE', page.detail);
+    root.render(<App videoId={page.videoId} requestedAt={requestedAt} onClose={close} initialError={notFound} />);
   },
   (e) => {
     document.documentElement.classList.toggle('dark', matchMedia('(prefers-color-scheme: dark)').matches);

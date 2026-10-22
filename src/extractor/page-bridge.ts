@@ -18,7 +18,7 @@ async function handle(req: BridgeRequest): Promise<BridgeReply> {
       case 'panelTranscript':
         return { ok: true, data: await playerApi.panelTranscript(req.videoId) };
       case 'seek':
-        return { ok: true, data: await playerApi.seek(req.seconds) };
+        return { ok: true, data: await playerApi.seek(req.seconds, req.videoId) };
     }
   } catch (e) {
     if (e instanceof TranscriptError) return { ok: false, code: e.code, detail: e.detail };

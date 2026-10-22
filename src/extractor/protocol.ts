@@ -11,7 +11,7 @@ export type BridgeRequest =
   | { kind: 'getPlayerResponse'; videoId: string }
   | { kind: 'fetchTrack'; videoId: string; baseUrl: string }
   | { kind: 'panelTranscript'; videoId: string }
-  | { kind: 'seek'; seconds: number };
+  | { kind: 'seek'; seconds: number; videoId?: string };
 
 export interface BridgeResults {
   getPlayerResponse: PlayerResponse;
