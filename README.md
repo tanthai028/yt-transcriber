@@ -1,23 +1,21 @@
 # yt-transcriber
 
 A Chrome extension that shows the transcript of the YouTube video you're watching, with clickable
-timestamps, using only YouTube's own captions. No backend, no API keys, nothing that costs money.
-Personal use; not published to the Chrome Web Store.
+timestamps, using only YouTube's own captions. No backend, no API keys, no third-party services,
+nothing that costs money. Personal use; not published to the Chrome Web Store.
 
-> Status: **v0.2.** Detects the video, lists caption tracks (manual and auto-generated) with a
-> language-aware default, renders the transcript with timestamps that seek the video, copies or
-> downloads it as TXT with or without timestamps, and caches transcripts locally.
->
-> **Unverified:** the "Show transcript" panel fallback (used only when the caption fetch is blocked)
-> has not yet been checked against YouTube's live panel. To help verify it, run
-> [`scripts/capture-transcript-panel.js`](scripts/capture-transcript-panel.js) in the console on a video page.
+**v0.2**: transcript with seekable timestamps, caption track picker, copy and TXT download (with or
+without timestamps), local cache, and a fallback to YouTube's "Show transcript" panel
+(**unverified**, see [Known limitations](#known-limitations)).
 
-## Build and load
+## Setup
 
-Requires Node 24+ (tests use Node's built-in TypeScript support).
+Requires Chrome 111+ and Node 24+ (the tests use Node's built-in TypeScript support).
 
 ```bash
 npm install
+```
+```bash
 npm run build
 ```
 
@@ -25,36 +23,130 @@ Then in Chrome:
 
 1. Open `chrome://extensions` and turn on **Developer mode** (top right).
 2. Click **Load unpacked** and select the `dist` folder.
-3. **Reload any YouTube tabs that were already open.** Scripts are only injected into pages loaded after install.
-4. On a video page, click the extension's toolbar icon (pin it from the puzzle-piece menu) or press **Alt+T**.
+3. **Reload any YouTube tabs that were already open.** The extension only attaches to pages loaded after it's installed.
+4. Pin the extension from the puzzle-piece menu so its icon stays visible (optional).
 
-After changing code: `npm run build`, click the reload icon on the extension's card in
-`chrome://extensions`, then reload the YouTube tab. `npm run watch` rebuilds on save.
+**Updating after a code change:** `npm run build`, click the reload arrow on the extension's card in
+`chrome://extensions`, then reload the YouTube tab. `npm run watch` rebuilds on every save.
 
-## Scripts
+## Usage
+
+On a `youtube.com/watch` page, press **Alt+T** or click the toolbar icon. The panel drops down from the
+top right and stays open while you watch; press Alt+T or × to close it.
+
+- **Click a timestamp** to jump the video there.
+- **Captions**: pick a track. Creator-uploaded tracks are listed under "Captions", YouTube's speech
+  recognition under "Auto-generated". The default is a manual track in your browser language, then an
+  auto-generated one in your language, then any manual track.
+- **Include timestamps On / Off**: applies to both Copy and Download, and is remembered.
+- **Copy** puts one caption per line on the clipboard. **Download** saves `Title [videoId].txt` with
+  the title, link and track name at the top.
+- Navigating to another video while the panel is open loads the new transcript automatically.
+- The footer shows the line count and how long the load took ("from cache" when cached). Each load
+  also logs a timing breakdown to the page console, prefixed `[yt-transcriber]`.
+
+## How it works
+
+YouTube's caption URLs (`/api/timedtext`, marked `exp=xpe`) return an **empty response** unless the
+request carries a proof-of-origin token (`pot`) minted inside YouTube's player. This changed in 2026
+and broke most older tutorials and libraries. The extension never creates tokens. Instead:
+
+1. A small script runs in the page from the very start and watches the caption requests the
+   player itself makes, remembering each one (with its token) per video.
+2. To fetch a track, it takes that track's own signed URL from the player and adds the extra
+   parameters from the player's request. Verified for manual and auto-generated tracks.
+3. If the player hasn't loaded captions yet, the extension switches CC on through the player's own
+   API, waits for the request, then puts your CC setting back. If the video hasn't started or an ad
+   is playing, it waits for the video itself.
+4. If YouTube still returns nothing, it opens YouTube's "Show transcript" panel and reads that instead.
+
+The extension never invents or alters text. Line breaks inside a caption are joined with a space, and
+that is the only change. If a response is empty, cut off or unreadable, you get an error, never a
+partial transcript. If captions end well before the video does, the panel says so.
+
+Observed during development on live YouTube (not a formal benchmark): a 19-second video in 40–210 ms,
+a 23-minute auto-generated transcript (817 lines) in 90 ms, a 47-minute video (783 lines) from cache in
+41 ms, and about 350 ms right after a fresh video load, including token capture.
+
+## Project layout
+
+```
+manifest.json               MV3 manifest
+build.mjs                   esbuild: three bundles → dist/
+src/extractor/              ALL YouTube-specific logic; when YouTube changes, fix it here
+  index.ts                  public interface used by the UI: getVideoInfo, getTranscript, seekTo
+  page-bridge.ts            runs inside the page: reads the player, observes caption requests, fetches
+  parsers.ts                pure: player response → tracks; json3/XML → lines; URL building
+  panel-fallback.ts         opens and reads the "Show transcript" panel
+  panel-parsers.ts          pure: panel JSON / panel rows → lines
+  protocol.ts, errors.ts, types.ts
+src/content/                panel UI (React in a Shadow DOM) and video-change detection
+src/cache.ts                chrome.storage.local cache
+src/format.ts               timestamps and TXT export
+src/background.ts           toolbar icon / Alt+T → open the panel
+test/                       unit tests; test/fixtures/ holds real YouTube responses
+docs/manual-test-checklist.md
+scripts/capture-transcript-panel.js   dev helper for checking the panel fallback
+```
 
 | Command | What it does |
 |---|---|
-| `npm run build` | Bundle to `dist/` with esbuild |
-| `npm run watch` | Rebuild on change (unminified) |
-| `npm test` | Parser unit tests against saved YouTube responses (`node --test`) |
+| `npm run build` | Bundle to `dist/` |
+| `npm run watch` | Rebuild on change (unminified, with source maps) |
+| `npm test` | Unit tests: parsers against saved YouTube responses, cache, export formatting |
 | `npm run typecheck` | `tsc --noEmit` |
 
-## How it gets captions (October 2026)
+Before trusting a new build, run [docs/manual-test-checklist.md](docs/manual-test-checklist.md).
 
-YouTube's caption URLs (`/api/timedtext`, marked `exp=xpe`) now return an **empty body** unless the
-request carries a proof-of-origin token (`pot`) minted by the player. The extension never mints
-tokens. A tiny page script watches the caption requests the player itself makes, keeps the URL
-with its token, and fetches the chosen track by adding the player's parameters to that track's
-own signed URL. If the player hasn't loaded captions yet, the extension toggles CC through the
-player's API to make it do so, then restores your CC setting.
+## Permissions and privacy
 
-All of this lives in [`src/extractor/`](src/extractor/). When YouTube changes, that is the
-folder to fix.
+- `https://www.youtube.com/*`: run on YouTube and request captions from it.
+- `storage`: the transcript cache and your timestamp setting.
 
-## Permissions
+Every network request goes to `www.youtube.com`, made the same way the page itself makes it. Nothing
+is sent anywhere else, and all data stays in your browser. The cache holds up to 8 MB; when it's full,
+the transcript you opened least recently is removed first, and entries expire after 30 days.
 
-- `https://www.youtube.com/*`: run on YouTube and fetch captions from it.
-- `storage`: transcript cache (8 MB cap, least-recently-opened evicted first, 30-day expiry) and your timestamp setting.
+## Troubleshooting
 
-No other network access: every request goes to `www.youtube.com`.
+| Symptom | Fix |
+|---|---|
+| Alt+T / the icon does nothing | Reload the YouTube tab: tabs opened before the extension was installed or reloaded have no script. If Alt+T still does nothing, another extension may use it; change it at `chrome://extensions/shortcuts`. |
+| "Waiting for the player…" | An ad is playing or the video hasn't started. Press play; the transcript loads once the video itself plays. |
+| "YouTube returned no caption data… press play once" | The player never loaded captions. Play the video for a second, then reopen the panel. |
+| "YouTube returned no caption data" (other) | YouTube blocked the caption request and the panel fallback failed too. Reload the tab and retry; if it persists, YouTube changed something. See below. |
+| "YouTube's page structure has changed…" | The player API or markup the extension relies on moved. Fix `src/extractor/` (start with the detail line shown under the message). |
+| Transcript looks out of date | Captions were edited after caching. Clear the cache: on `chrome://extensions`, open the extension's service worker console (the "service worker" link on its card) and run `chrome.storage.local.clear()`. |
+| Wrong language | Pick another track in the Captions menu. If the note says it came from the transcript panel, the panel uses its own language choice. |
+
+**When YouTube changes:** check the page console for `[yt-transcriber]` lines, then work in
+`src/extractor/`. The pure parsers have fixture tests. Save a new real response in `test/fixtures/`
+and add a test before changing a parser.
+
+## Known limitations
+
+- **Panel fallback unverified.** It was written against known structures of YouTube's transcript
+  panel and its `get_transcript` response, but hasn't been checked against the live panel (October 2026).
+  Its JSON test uses a hand-written sample. To verify, run
+  [scripts/capture-transcript-panel.js](scripts/capture-transcript-panel.js) on a video page and update
+  the selectors and fixture. A panel transcript may be in a different language than the selected track,
+  and it isn't cached.
+- **Briefly toggles CC.** When the player hasn't loaded captions for a video yet, the extension turns
+  CC on and back off, which can flash captions for a moment.
+- **Captions only.** Videos without captions (or with captions disabled by the creator; YouTube reports
+  both the same way) have no transcript. Audio transcription is out of scope for v1.
+- **Live streams and premieres** aren't supported until they've ended and been processed.
+- **Watch pages only**: not Shorts, embeds, or `m.youtube.com`.
+- **Age-restricted videos** need you to be signed in with an age-verified account.
+- **Arrow position** points at the top-right corner. A page can't know exactly where Chrome places
+  the extension icon.
+- **Depends on YouTube internals** (player API, request format). A YouTube update can break it; the
+  error messages say which part failed.
+- **Translations:** YouTube's auto-translate languages aren't offered (the code supports `tlang`, but the
+  UI doesn't expose it yet).
+
+## Possible later work
+
+- Audio transcription for videos without captions (e.g. local faster-whisper).
+- Auto-translated tracks in the Captions menu.
+- Highlighting the current line during playback.
