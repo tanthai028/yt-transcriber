@@ -1,9 +1,11 @@
-// Public interface of the extraction module. The UI imports only from here.
-// Runs in the content script (isolated world) and talks to page-bridge.ts.
+// Public interface of the extraction module. UIs import only from here.
+// `createExtractor` holds the transcript logic over any PlayerApi; the exported getVideoInfo /
+// getTranscript / seekTo use the extension's transport (content script → page-bridge.ts via postMessage).
 
 import { TranscriptError } from './errors.ts';
 import { parseJson3, parsePlayerResponse } from './parsers.ts';
 import { CHANNEL, isEnvelope, type BridgeReply, type BridgeRequest, type BridgeResults, type Envelope } from './protocol.ts';
+import type { PlayerApi } from './player.ts';
 import type { CaptionTrack, Transcript, VideoInfo } from './types.ts';
 
 export { TranscriptError, messageFor, type ErrorCode } from './errors.ts';
@@ -40,59 +42,70 @@ function call<K extends BridgeRequest['kind']>(req: Extract<BridgeRequest, { kin
   });
 }
 
-/** Reads the player for `videoId` and returns its caption tracks, or throws a TranscriptError. */
-export async function getVideoInfo(videoId: string): Promise<VideoInfo> {
-  const pr = await call({ kind: 'getPlayerResponse', videoId });
-  return parsePlayerResponse(pr, videoId);
-}
+/** PlayerApi over postMessage to page-bridge.ts (the extension's content script can't reach the player). */
+const bridgeApi: PlayerApi = {
+  getPlayerResponse: (videoId) => call({ kind: 'getPlayerResponse', videoId }),
+  fetchTrack: (videoId, baseUrl) => call({ kind: 'fetchTrack', videoId, baseUrl }),
+  panelTranscript: (videoId) => call({ kind: 'panelTranscript', videoId }),
+  seek: (seconds) => call({ kind: 'seek', seconds }),
+};
 
 export interface TranscriptResult {
   transcript: Transcript;
   timings: Record<string, number>;
 }
 
-async function fromCaptions(video: VideoInfo, track: CaptionTrack): Promise<TranscriptResult> {
-  const { body, timings } = await call({ kind: 'fetchTrack', videoId: video.videoId, baseUrl: track.baseUrl });
-  const t = performance.now();
-  const segments = parseJson3(body);
-  timings.parseMs = Math.round(performance.now() - t);
-  if (segments.length === 0) throw new TranscriptError('NO_CAPTIONS', `track "${track.label}" is empty`);
-  return { transcript: { videoId: video.videoId, trackId: track.id, segments, source: 'captions' }, timings };
-}
-
-async function fromPanel(video: VideoInfo): Promise<TranscriptResult> {
-  const t = performance.now();
-  const { segments, languageLabel, via } = await call({ kind: 'panelTranscript', videoId: video.videoId });
-  if (segments.length === 0) throw new TranscriptError('NO_CAPTIONS', 'the transcript panel was empty');
-  return {
-    transcript: { videoId: video.videoId, trackId: 'panel', segments, source: 'panel', panelLanguage: languageLabel },
-    timings: { panelMs: Math.round(performance.now() - t), [`panelVia_${via}`]: 1 },
-  };
-}
-
 /** Failures the "Show transcript" panel can work around (it uses its own request path). */
 const PANEL_CAN_HELP = new Set(['BLOCKED', 'PAGE_CHANGED', 'MALFORMED']);
 
-/**
- * Fetches and parses one caption track; if YouTube blocks that, reads the transcript panel instead.
- * Never returns a partial transcript: any doubt throws.
- */
-export async function getTranscript(video: VideoInfo, track: CaptionTrack): Promise<TranscriptResult> {
-  try {
-    return await fromCaptions(video, track);
-  } catch (e) {
-    if (!(e instanceof TranscriptError) || !PANEL_CAN_HELP.has(e.code)) throw e;
-    console.info('[yt-transcriber] caption fetch failed, trying transcript panel:', e.code, e.detail ?? '');
-    try {
-      return await fromPanel(video);
-    } catch (e2) {
-      const why = e2 instanceof TranscriptError ? (e2.detail ?? e2.code) : String(e2);
-      // Report the original failure; it is the more informative one.
-      throw new TranscriptError(e.code, `${e.detail ?? e.code}; transcript panel fallback also failed: ${why}`);
-    }
+export function createExtractor(api: PlayerApi) {
+  async function fromCaptions(video: VideoInfo, track: CaptionTrack): Promise<TranscriptResult> {
+    const { body, timings } = await api.fetchTrack(video.videoId, track.baseUrl);
+    const t = performance.now();
+    const segments = parseJson3(body);
+    timings.parseMs = Math.round(performance.now() - t);
+    if (segments.length === 0) throw new TranscriptError('NO_CAPTIONS', `track "${track.label}" is empty`);
+    return { transcript: { videoId: video.videoId, trackId: track.id, segments, source: 'captions' }, timings };
   }
+
+  async function fromPanel(video: VideoInfo): Promise<TranscriptResult> {
+    const t = performance.now();
+    const { segments, languageLabel, via } = await api.panelTranscript(video.videoId);
+    if (segments.length === 0) throw new TranscriptError('NO_CAPTIONS', 'the transcript panel was empty');
+    return {
+      transcript: { videoId: video.videoId, trackId: 'panel', segments, source: 'panel', panelLanguage: languageLabel },
+      timings: { panelMs: Math.round(performance.now() - t), [`panelVia_${via}`]: 1 },
+    };
+  }
+
+  return {
+    /** Reads the player for `videoId` and returns its caption tracks, or throws a TranscriptError. */
+    async getVideoInfo(videoId: string): Promise<VideoInfo> {
+      return parsePlayerResponse(await api.getPlayerResponse(videoId), videoId);
+    },
+
+    /**
+     * Fetches and parses one caption track; if YouTube blocks that, reads the transcript panel instead.
+     * Never returns a partial transcript: any doubt throws.
+     */
+    async getTranscript(video: VideoInfo, track: CaptionTrack): Promise<TranscriptResult> {
+      try {
+        return await fromCaptions(video, track);
+      } catch (e) {
+        if (!(e instanceof TranscriptError) || !PANEL_CAN_HELP.has(e.code)) throw e;
+        console.info('[yt-transcriber] caption fetch failed, trying transcript panel:', e.code, e.detail ?? '');
+        try {
+          return await fromPanel(video);
+        } catch (e2) {
+          const why = e2 instanceof TranscriptError ? (e2.detail ?? e2.code) : String(e2);
+          // Report the original failure; it is the more informative one.
+          throw new TranscriptError(e.code, `${e.detail ?? e.code}; transcript panel fallback also failed: ${why}`);
+        }
+      }
+    },
+
+    seekTo: (seconds: number): Promise<null> => api.seek(seconds),
+  };
 }
 
-export function seekTo(seconds: number): Promise<null> {
-  return call({ kind: 'seek', seconds });
-}
+export const { getVideoInfo, getTranscript, seekTo } = createExtractor(bridgeApi);

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist-web",
+  "headers": [
+    {
+      "source": "/bookmarklet.js",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Cache-Control", "value": "no-cache" },
+        { "key": "Content-Type", "value": "text/javascript; charset=utf-8" }
+      ]
+    }
+  ]
+}

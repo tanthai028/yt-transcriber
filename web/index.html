@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YT Transcriber</title>
+    <meta name="description" content="Transcripts of YouTube videos, with clickable timestamps, search, copy and download. Works on iPad." />
+    <style>
+      :root {
+        --bg: #f8f9fa; --card: #ffffff; --fg: #1f1f1f; --muted: #5f6368; --line: #dadce0;
+        --accent: #1a7486; --accent-fg: #ffffff; --code: #f1f3f4;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #17181a; --card: #202124; --fg: #e8eaed; --muted: #9aa0a6; --line: #3c4043;
+          --accent: #2f7f91; --accent-fg: #ffffff; --code: #2a2b2e;
+          color-scheme: dark;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      main { max-width: 680px; margin: 0 auto; padding: 40px 16px 64px; }
+      h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -.2px; }
+      h2 { font-size: 18px; margin: 0 0 12px; }
+      .lede { color: var(--muted); margin: 0 0 28px; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 0 0 16px; }
+      ol { margin: 0; padding-left: 22px; }
+      li { margin: 0 0 8px; }
+      li:last-child { margin: 0; }
+      .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
+      button, .drag {
+        font: inherit; font-size: 15px; font-weight: 600; border-radius: 8px; padding: 10px 16px; cursor: pointer;
+        border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); text-decoration: none;
+      }
+      .drag { background: transparent; color: var(--accent); cursor: grab; }
+      .ok { color: var(--accent); font-size: 14px; }
+      textarea {
+        width: 100%; height: 96px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+        background: var(--code); color: var(--fg); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      .muted { color: var(--muted); font-size: 14px; }
+      code { background: var(--code); border-radius: 4px; padding: 1px 5px; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>YT Transcriber</h1>
+      <p class="lede">
+        The transcript of the YouTube video you're watching, with clickable timestamps, search, copy and download.
+        It runs inside the YouTube page in your browser, using YouTube's own captions. Nothing is sent anywhere except YouTube.
+      </p>
+
+      <section class="card">
+        <h2>1. Get the bookmarklet</h2>
+        <div class="row">
+          <button id="copy" type="button">Copy bookmarklet</button>
+          <a class="drag" id="drag" href="#" title="Drag me to your bookmarks bar">YT Transcript</a>
+          <span class="ok" id="copied" hidden>Copied</span>
+        </div>
+        <p class="muted">On a computer you can drag <strong>YT Transcript</strong> to your bookmarks bar instead. The code, if you'd rather copy it yourself:</p>
+        <textarea id="code" readonly aria-label="Bookmarklet code"></textarea>
+      </section>
+
+      <section class="card">
+        <h2>2. Add it on iPad or iPhone (Safari)</h2>
+        <ol>
+          <li>Tap <strong>Copy bookmarklet</strong> above.</li>
+          <li>Bookmark this page: Share button → <strong>Add Bookmark</strong> → Save.</li>
+          <li>Open Bookmarks (the book icon) → <strong>Edit</strong> → tap the new bookmark.</li>
+          <li>Rename it <code>YT Transcript</code>, clear the address, paste the copied code, then tap <strong>Done</strong>.</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>3. Use it</h2>
+        <ol>
+          <li>Open a video on <strong>youtube.com</strong> in Safari (not the YouTube app).</li>
+          <li>Open Bookmarks and tap <strong>YT Transcript</strong>. The transcript appears at the top right of the page.</li>
+          <li>Tap a timestamp to jump there. Tap the bookmark again to hide or show the panel.</li>
+        </ol>
+        <p class="muted">
+          If nothing happens, let the video play for a second and tap it again. Updates to this site reach the bookmarklet
+          automatically; there's nothing to reinstall.
+        </p>
+      </section>
+
+      <p class="muted">Using Chrome on a computer? The Chrome extension version is in the project's README.</p>
+    </main>
+
+    <script>
+      // The bookmarklet downloads the latest code from this site and runs it in the YouTube page.
+      // YouTube's Trusted Types rule needs the code wrapped by a policy before eval.
+      const src = location.origin + '/bookmarklet.js';
+      const loader =
+        "(()=>{if(!/(^|\\.)youtube\\.com$/.test(location.hostname))return alert('Open a YouTube video first, then use this bookmark.');" +
+        'if(window.__ytTranscriber)return window.__ytTranscriber.toggle();' +
+        `fetch(${JSON.stringify(src)},{cache:'no-store'})` +
+        ".then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.text()})" +
+        ".then(c=>{const t=window.trustedTypes,p=t&&t.createPolicy?t.createPolicy('yt-transcriber-'+Date.now(),{createScript:s=>s}):null;(0,eval)(p?p.createScript(c):c)})" +
+        ".catch(e=>alert('YT Transcriber could not load: '+e.message))})()";
+      const bookmarklet = 'javascript:' + encodeURIComponent(loader);
+
+      document.getElementById('drag').href = bookmarklet;
+      document.getElementById('drag').addEventListener('click', (e) => {
+        e.preventDefault();
+        alert('Drag this to your bookmarks bar, then use it on a YouTube video.');
+      });
+      document.getElementById('code').value = bookmarklet;
+      document.getElementById('copy').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(bookmarklet);
+        } catch {
+          const ta = document.getElementById('code');
+          ta.select();
+          document.execCommand('copy');
+        }
+        document.getElementById('copied').hidden = false;
+      });
+    </script>
+  </body>
+</html>

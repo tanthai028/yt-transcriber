@@ -55,3 +55,18 @@ under 2000 ms from opening the panel to the rendered transcript.
 | Video | Length | Lines | First load (ms) | Cached (ms) |
 |---|---|---|---|---|
 | | | | | |
+
+## Bookmarklet (website build)
+
+Deploy first (`npx vercel --prod`), then open the install page.
+
+| # | Case | Steps | Expected | Result |
+|---|---|---|---|---|
+| B1 | Install on iPad | Follow the install page's steps in Safari | Bookmark address starts with `javascript:` | |
+| B2 | Open on iPad | youtube.com video in Safari → tap the bookmark | Panel at top right with the transcript | |
+| B3 | Late start | Let a video play, turn CC on, then tap the bookmark | Transcript loads (token recovered via CC toggle or translation) | |
+| B4 | Ended video | Let a short video finish, then tap the bookmark | Transcript loads | |
+| B5 | Toggle | Tap the bookmark twice | Panel hides, then shows and reloads | |
+| B6 | In-app navigation | With the panel open, tap a related video | Panel reloads for the new video | |
+| B7 | Search, seek, switch track, copy, download | As in cases 9–12 | Same results as the extension | |
+| B8 | Not YouTube | Tap the bookmark on another site | "Open a YouTube video first…" alert | |
