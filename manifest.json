@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "YT Transcriber",
+  "version": "0.1.0",
+  "description": "Shows the transcript of the YouTube video you're watching, from YouTube's own captions. No servers, no keys.",
+  "minimum_chrome_version": "111",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.youtube.com/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Show transcript (Alt+T)" },
+  "commands": {
+    "_execute_action": { "suggested_key": { "default": "Alt+T" } }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["page-bridge.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
