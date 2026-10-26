@@ -1,17 +1,67 @@
 # yt-transcriber
 
-Shows the transcript of the YouTube video you're watching, with clickable timestamps, using only
-YouTube's own captions. No backend, no API keys, nothing that costs money. Two ways to use it:
+**Read, search and copy the transcript of any YouTube video, with clickable timestamps. Works as a Chrome extension on desktop and as a bookmarklet on iPhone and iPad.**
 
-- **Chrome extension**: a popup under the toolbar icon.
-- **Bookmarklet** (iPhone and iPad Safari, or any browser): a panel on the YouTube page, installed from
-  a static site you host on Vercel. See [iPhone, iPad and other browsers](#iphone-ipad-and-other-browsers-bookmarklet).
+TypeScript · React 19 · Chrome Manifest V3 · esbuild · Node test runner · Vercel · no backend, no API keys, $0 to run
 
-**v0.4**: transcript with seekable timestamps, search, caption track picker, copy and TXT download
-(with or without timestamps), local cache (extension), and a fallback to YouTube's "Show transcript"
-panel (**unverified**, see [Known limitations](#known-limitations)).
+<img src="docs/popup.png" alt="yt-transcriber popup showing a transcript with timestamps, caption picker, search, copy and download" width="340">
 
-## Setup
+*The Chrome popup: pick a caption track, search, click any timestamp to jump there, or copy/download the text.*
+
+## Why I built it
+
+A lot of what I learn comes from YouTube: lectures, tutorials, long talks. Often I don't want to rewatch a 40-minute video to find one explanation. I want to skim it, search it for a word, or paste a section into my notes. YouTube has a "Show transcript" panel, but it's buried, it isn't searchable, it's awkward to copy from, and it's even harder to use on a phone.
+
+This is the follow-up to my other YouTube extension, [YTBookmarks](https://github.com/tanthai028/YTBookmark), which marks moments in a video. This one makes a video's words searchable. I set strict rules: use only YouTube's own captions, no server, no paid APIs, and never alter or invent text.
+
+## The interesting problem
+
+The first obstacle: every caption request came back **empty**. YouTube now requires a proof-of-origin token (`pot`) on caption URLs, minted inside its own player. That change in 2026 broke most of the tutorials and open-source libraries I'd normally have leaned on.
+
+Instead of trying to forge tokens, I changed approach: let YouTube's player do the work and observe it.
+
+1. A small script runs in the page from the very start and watches the caption requests the player itself makes, remembering each one (with its token) per video.
+2. To fetch a track, it takes that track's signed URL from the player and adds the parameters from the player's own request.
+3. If the player hasn't loaded captions yet, it switches CC on through the player's API, waits for the request, then restores your CC setting.
+4. If YouTube still returns nothing, it falls back to opening YouTube's transcript panel and reading that.
+
+Observed on live YouTube during development (not a formal benchmark): a 23-minute auto-generated transcript (817 lines) loads in about 90 ms, and a cached 47-minute video in about 41 ms.
+
+## What it does
+
+- **Transcript with clickable timestamps.** Click any line to jump the video there.
+- **Search** with highlighted matches and keyboard navigation ("3 / 17").
+- **Caption track picker:** creator captions vs. auto-generated, with a sensible default for your language.
+- **Copy or download as TXT**, with or without timestamps.
+- **Local cache** (8 MB, least-recently-used eviction, 30-day expiry) so reopening is instant.
+- **iPhone and iPad:** a bookmarklet, installed from a static page on Vercel, that opens the same transcript panel on the YouTube site in Safari.
+- **Shortcut:** Alt+T on desktop.
+
+## Engineering highlights
+
+- **All YouTube-specific code is isolated in [`src/extractor/`](src/extractor/).** When YouTube changes something, there's one place to fix. The UI only sees a small interface: `getVideoInfo`, `getTranscript`, `seekTo`.
+- **One extractor, two products.** The Chrome extension and the iPhone bookmarklet share the same page-side code; esbuild builds both from one `build.mjs`.
+- **Pure parsers, tested against real responses.** 57 unit tests run on Node's built-in test runner, with saved real YouTube responses as fixtures (JSON3 and XML captions, manual and auto-generated tracks).
+- **Errors over wrong answers.** If a response is empty, cut off or unreadable, the user gets a specific error explaining which part failed, never a partial transcript.
+- **Privacy by design.** Every request goes to `www.youtube.com`, made the same way the page makes it. Nothing is collected or sent anywhere else.
+- **Honest documentation.** Known limitations and unverified paths are written down below, along with a [manual test checklist](docs/manual-test-checklist.md) for live testing.
+
+## What I learned
+
+- **Don't fight the platform; observe it.** Reverse-engineering the token would have been fragile and against the spirit of the project. Watching the player's own network requests was simpler, more robust, and needed no secrets.
+- **Isolate what will break.** Building on undocumented internals means breakage is a matter of when, not if. Putting all of it behind one module boundary, with fixture tests, turns a future outage into a small, local fix.
+- **Real data beats assumptions.** Saving real YouTube responses as test fixtures kept the parsers honest about what YouTube actually sends, including the differences between manual and auto-generated captions.
+- **Mobile is a different world.** Getting the bookmarklet working in iPhone Safari meant handling the mobile site, Shorts, `youtu.be` links and other URL formats, plus Safari quirks like bookmarklets only running from the Bookmarks list.
+
+## Tech stack
+
+- **TypeScript** throughout, **React 19** for the popup UI, plain DOM for the bookmarklet
+- **Chrome Extension Manifest V3** (content script, page-world script, popup)
+- **esbuild** for both builds, **Vercel** for the static bookmarklet site
+- **Node's built-in test runner** with real-response fixtures
+- `chrome.storage.local` for the cache
+
+## Run it locally
 
 Requires Chrome 111+ and Node 24+ (the tests use Node's built-in TypeScript support).
 
@@ -32,7 +82,10 @@ Then in Chrome:
 **Updating after a code change:** `npm run build`, click the reload arrow on the extension's card in
 `chrome://extensions`, then reload the YouTube tab. `npm run watch` rebuilds on every save.
 
-## Usage
+## Using it
+
+<details>
+<summary>Chrome extension: usage</summary>
 
 On a `youtube.com/watch` page, click the toolbar icon or press **Alt+T**. The transcript opens in a
 popup directly under the icon. Like any Chrome extension popup, it closes when you click elsewhere
@@ -50,7 +103,10 @@ popup directly under the icon. Like any Chrome extension popup, it closes when y
   also logs a timing breakdown to the popup's console (right-click the popup → Inspect), prefixed
 `[yt-transcriber]`.
 
-## iPhone, iPad and other browsers (bookmarklet)
+</details>
+
+<details>
+<summary>iPhone, iPad and other browsers (bookmarklet): deploy and install</summary>
 
 The `dist-web/` build is a static site: an install page plus `bookmarklet.js`. The bookmarklet you save
 is a few hundred characters long. When you tap it on a YouTube video, it downloads the latest
@@ -58,7 +114,7 @@ is a few hundred characters long. When you tap it on a YouTube video, it downloa
 as the extension's, so it reaches the player the same way. Captions still come only from YouTube, and
 nothing is sent to your site except the request for the script.
 
-### Deploy to Vercel (free Hobby plan)
+**Deploy to Vercel (free Hobby plan)**
 
 ```bash
 npx vercel login
@@ -72,7 +128,7 @@ header that lets the YouTube page download `bookmarklet.js`. The first deploy as
 `yt-transcriber` gives `yt-transcriber.vercel.app` if that name is free. Run `npx vercel --prod` again
 after changes; bookmarklets pick up the new code automatically.
 
-### Install on iPhone or iPad
+**Install on iPhone or iPad**
 
 1. Open your site in Safari and tap **Copy bookmarklet**.
 2. Bookmark that page: Share → **Add Bookmark** → Save.
@@ -81,7 +137,7 @@ after changes; bookmarklets pick up the new code automatically.
 
 On a computer, drag **YT Transcript** from the install page to the bookmarks bar.
 
-### Use on iPhone or iPad
+**Use on iPhone or iPad**
 
 1. Open the video in **Safari**, not the YouTube app. All of these work, on the mobile site
    (`m.youtube.com`, the iPhone default) and the desktop site (the iPad default):
@@ -95,30 +151,9 @@ On a computer, drag **YT Transcript** from the install page to the bookmarks bar
 If something fails, the panel's grey detail line says what it detected: the page, the URL type, and
 where it looked for the video ID.
 
-## How it works
+</details>
 
-YouTube's caption URLs (`/api/timedtext`, marked `exp=xpe`) return an **empty response** unless the
-request carries a proof-of-origin token (`pot`) minted inside YouTube's player. This changed in 2026
-and broke most older tutorials and libraries. The extension never creates tokens. Instead:
-
-1. A small script runs in the page from the very start and watches the caption requests the
-   player itself makes, remembering each one (with its token) per video.
-2. To fetch a track, it takes that track's own signed URL from the player and adds the extra
-   parameters from the player's request. Verified for manual and auto-generated tracks.
-3. If the player hasn't loaded captions yet, the extension switches CC on through the player's own
-   API, waits for the request, then puts your CC setting back. If the video hasn't started or an ad
-   is playing, it waits for the video itself.
-4. If YouTube still returns nothing, it opens YouTube's "Show transcript" panel and reads that instead.
-
-The extension never invents or alters text. Line breaks inside a caption are joined with a space, and
-that is the only change. If a response is empty, cut off or unreadable, you get an error, never a
-partial transcript. If captions end well before the video does, the panel says so.
-
-Observed during development on live YouTube (not a formal benchmark): a 19-second video in 40–210 ms,
-a 23-minute auto-generated transcript (817 lines) in 90 ms, a 47-minute video (783 lines) from cache in
-41 ms, and about 350 ms right after a fresh video load, including token capture.
-
-## Project layout
+## Project structure
 
 ```
 manifest.json               MV3 manifest
@@ -163,28 +198,6 @@ bookmarklet also downloads its own code from your Vercel site. Nothing else is s
 data stays in your browser. The cache holds up to 8 MB; when it's full,
 the transcript you opened least recently is removed first, and entries expire after 30 days.
 
-## Troubleshooting
-
-| Symptom | Fix |
-|---|---|
-| "Reload this YouTube tab…" | The tab was opened before the extension was installed or reloaded. Reload it. |
-| Alt+T does nothing | Another extension may use it; change it at `chrome://extensions/shortcuts`. |
-| "Waiting for the player…" | An ad is playing or the video hasn't started. Let the video play, then open the popup again. |
-| "YouTube returned no caption data… press play once" | The player never loaded captions. Play the video for a second, then reopen the panel. |
-| "YouTube returned no caption data" (other) | YouTube blocked the caption request and the panel fallback failed too. Reload the tab and retry; if it persists, YouTube changed something. See below. |
-| "YouTube's page structure has changed…" | The player API or markup the extension relies on moved. Fix `src/extractor/` (start with the detail line shown under the message). |
-| Transcript looks out of date | Captions were edited after caching. Clear the cache: right-click the popup → Inspect, and in that console run `chrome.storage.local.clear()`. |
-| Bookmarklet: "Cannot Run Script" (Safari) | You started it from the address bar. Open the Bookmarks list and tap it there. |
-| Bookmarklet: nothing happens | Make sure you're on YouTube in Safari, not the YouTube app, and that the bookmark's address starts with `javascript:`. |
-| Bookmarklet: "works on YouTube pages; this page is …" | The alert names the page it ran on; open the video on youtube.com first. |
-| Bookmarklet: "Open a YouTube video…" with a grey detail line | The detail says what was checked (e.g. `m.youtube.com/feed/trending: not a video page`). If it names a real video page, send me that line. |
-| Bookmarklet: "could not load" | Your Vercel site is unreachable, or `bookmarklet.js` lacks the CORS header. Open `https://<your-site>/bookmarklet.js` to check it loads. |
-| Wrong language | Pick another track in the Captions menu. If the note says it came from the transcript panel, the panel uses its own language choice. |
-
-**When YouTube changes:** check the page console for `[yt-transcriber]` lines, then work in
-`src/extractor/`. The pure parsers have fixture tests. Save a new real response in `test/fixtures/`
-and add a test before changing a parser.
-
 ## Known limitations
 
 - **Panel fallback unverified.** It was written against known structures of YouTube's transcript
@@ -200,7 +213,7 @@ and add a test before changing a parser.
 - **Live streams and premieres** aren't supported until they've ended and been processed.
 - **Sites:** the extension runs on `www.youtube.com` (watch pages and Shorts). The bookmarklet also runs
   on `m.youtube.com`. Both were tested on live YouTube by emulating a phone in desktop Chrome, not in
-  real iPhone Safari; your iPhone test showed Safari runs it once started from the Bookmarks list.
+  real iPhone Safari, except for a check on a real iPhone that confirmed Safari runs it when started from the Bookmarks list.
   The bookmarklet has no cache and no Alt+T shortcut, and if YouTube ever restricts which Trusted Types
   policies pages may create, the loader will stop working.
 - **Age-restricted videos** need you to be signed in with an age-verified account.
@@ -216,3 +229,36 @@ and add a test before changing a parser.
 - Audio transcription for videos without captions (e.g. local faster-whisper).
 - Auto-translated tracks in the Captions menu.
 - Highlighting the current line during playback.
+
+## Troubleshooting
+
+<details>
+<summary>Common problems and fixes</summary>
+
+| Symptom | Fix |
+|---|---|
+| "Reload this YouTube tab…" | The tab was opened before the extension was installed or reloaded. Reload it. |
+| Alt+T does nothing | Another extension may use it; change it at `chrome://extensions/shortcuts`. |
+| "Waiting for the player…" | An ad is playing or the video hasn't started. Let the video play, then open the popup again. |
+| "YouTube returned no caption data… press play once" | The player never loaded captions. Play the video for a second, then reopen the panel. |
+| "YouTube returned no caption data" (other) | YouTube blocked the caption request and the panel fallback failed too. Reload the tab and retry; if it persists, YouTube changed something. See below. |
+| "YouTube's page structure has changed…" | The player API or markup the extension relies on moved. Fix `src/extractor/` (start with the detail line shown under the message). |
+| Transcript looks out of date | Captions were edited after caching. Clear the cache: right-click the popup → Inspect, and in that console run `chrome.storage.local.clear()`. |
+| Bookmarklet: "Cannot Run Script" (Safari) | You started it from the address bar. Open the Bookmarks list and tap it there. |
+| Bookmarklet: nothing happens | Make sure you're on YouTube in Safari, not the YouTube app, and that the bookmark's address starts with `javascript:`. |
+| Bookmarklet: "works on YouTube pages; this page is …" | The alert names the page it ran on; open the video on youtube.com first. |
+| Bookmarklet: "Open a YouTube video…" with a grey detail line | The detail says what was checked (e.g. `m.youtube.com/feed/trending: not a video page`). If it names a real video page, please open an issue with that line. |
+| Bookmarklet: "could not load" | Your Vercel site is unreachable, or `bookmarklet.js` lacks the CORS header. Open `https://<your-site>/bookmarklet.js` to check it loads. |
+| Wrong language | Pick another track in the Captions menu. If the note says it came from the transcript panel, the panel uses its own language choice. |
+
+**When YouTube changes:** check the page console for `[yt-transcriber]` lines, then work in
+`src/extractor/`. The pure parsers have fixture tests. Save a new real response in `test/fixtures/`
+and add a test before changing a parser.
+
+</details>
+
+## About
+
+Built by **Tan Thai**. | [LinkedIn](https://linkedin.com/in/tanthai028) | [GitHub](https://github.com/tanthai028)
+
+Other projects: [YTBookmarks](https://github.com/tanthai028/YTBookmark) (bookmarks on YouTube's timeline, on the Chrome Web Store) · [Stride](https://github.com/tanthai028/stride-desktop-app) · [RJ Job Tracker](https://github.com/tanthai028/RJTracker)
